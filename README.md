@@ -45,6 +45,20 @@ O usa el archivo `.bat`:
 setup.bat
 ```
 
+### Android (Termux)
+
+```bash
+# Instalar Termux desde F-Droid (recomendado)
+# Luego en Termux:
+pkg update && pkg install git
+git clone https://github.com/tu-usuario/dj-web-decks.git
+cd dj-web-decks
+chmod +x setup-termux.sh
+./setup-termux.sh
+```
+
+> **Tip:** El script instala automáticamente Node.js, Python, FFmpeg y yt-dlp.
+
 ## 📖 Uso
 
 1. Inicia el servidor:
@@ -86,14 +100,15 @@ setup.bat
 
 ```
 dj-web-decks/
-├── index.html      # Frontend principal
-├── app.js          # Lógica del DJ (Web Audio API)
-├── style.css       # Estilos (Glassmorphism)
-├── server.js       # Backend Node.js/Express
-├── setup.sh        # Script de setup (Linux/macOS)
-├── setup.ps1       # Script de setup (Windows PowerShell)
-├── setup.bat       # Script de setup (Windows CMD)
-└── package.json    # Dependencias npm
+├── index.html        # Frontend principal
+├── app.js            # Lógica del DJ (Web Audio API)
+├── style.css         # Estilos (Glassmorphism)
+├── server.js         # Backend Node.js/Express
+├── setup.sh          # 🐧 Setup Linux/macOS
+├── setup.ps1         # 🪟 Setup Windows PowerShell
+├── setup.bat         # 🪟 Setup Windows CMD
+├── setup-termux.sh   # 🤖 Setup Android/Termux
+└── package.json      # Dependencias npm
 ```
 
 ## 🔧 Dependencias
