@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Temporary files
+temp_audio/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# yt-dlp binaries (se descargan automáticamente)
+yt-dlp
+yt-dlp.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archives
+.archive/
+
+# Environment
+.env
+.env.local

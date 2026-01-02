@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>DJ Web Decks</title>
+
+  <!-- SEO -->
+  <meta name="description"
+    content="DJ Web Decks - Mezcla música desde YouTube con dos decks virtuales, crossfader y automix.">
+  <meta name="theme-color" content="#0a0a0f">
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="screen.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <!-- Wake Lock Indicator -->
+  <div id="wakeLockIndicator" class="wake-lock-indicator inactive">
+    <span class="dot"></span>
+    <span>Pantalla activa</span>
+  </div>
+
+  <div class="container">
+    <!-- Deck A -->
+    <div class="deck deck-a glass-card">
+      <h2>Deck A</h2>
+
+      <div class="track-info">
+        <p class="track-title-display" id="titleA">Sin pista cargada</p>
+        <p class="track-subtitle" id="subtitleA"></p>
+      </div>
+
+      <div class="jogwheel" id="jogwheelA"></div>
+
+      <p class="bpm" id="bpmA">-- BPM</p>
+
+      <div class="controls">
+        <button id="playA">▶ Play</button>
+        <button id="pauseA">⏸ Pause</button>
+        <button id="stopA">⏹ Stop</button>
+        <button id="cueA" class="cue-button">CUE</button>
+      </div>
+
+      <div class="url-input-group">
+        <input type="text" id="ytUrlA" placeholder="Link de YouTube...">
+        <button id="loadA">Cargar</button>
+      </div>
+      <p class="disclaimer">Para uso personal</p>
+
+      <audio id="deckA" crossorigin="anonymous"></audio>
+    </div>
+
+    <!-- Mixer -->
+    <div class="mixer glass-card">
+      <h2>Mixer</h2>
+
+      <div class="vu-meter-container">
+        <div class="vu-meter-wrapper">
+          <label>A</label>
+          <div class="vu-meter">
+            <div class="vu-bar" id="vuBarA"></div>
+          </div>
+        </div>
+        <div class="vu-meter-wrapper">
+          <label>B</label>
+          <div class="vu-meter">
+            <div class="vu-bar" id="vuBarB"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="crossfader-container">
+        <label>Crossfader</label>
+        <input type="range" id="crossfader" class="crossfader" min="0" max="100" value="50">
+      </div>
+
+      <div class="mixer-options">
+        <label>
+          <input type="checkbox" id="compressorToggle" checked>
+          Normalizar Volumen
+        </label>
+      </div>
+
+      <button id="transitionBtn" class="btn-mix">🔄 Transición</button>
+      <button id="autoMixBtn" class="btn-mix">⚡ Auto Mix</button>
+
+      <!-- Recording Controls -->
+      <div class="recording-section">
+        <div class="recording-header">
+          <span class="rec-indicator" id="recIndicator"></span>
+          <span class="rec-time" id="recTime">00:00</span>
+        </div>
+        <div class="recording-controls">
+          <button id="recBtn" class="btn-rec">⏺ REC</button>
+          <button id="downloadBtn" class="btn-download" disabled>💾 Descargar MP3</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deck B -->
+    <div class="deck deck-b glass-card">
+      <h2>Deck B</h2>
+
+      <div class="track-info">
+        <p class="track-title-display" id="titleB">Sin pista cargada</p>
+        <p class="track-subtitle" id="subtitleB"></p>
+      </div>
+
+      <div class="jogwheel" id="jogwheelB"></div>
+
+      <p class="bpm" id="bpmB">-- BPM</p>
+
+      <div class="controls">
+        <button id="playB">▶ Play</button>
+        <button id="pauseB">⏸ Pause</button>
+        <button id="stopB">⏹ Stop</button>
+        <button id="cueB" class="cue-button">CUE</button>
+      </div>
+
+      <div class="url-input-group">
+        <input type="text" id="ytUrlB" placeholder="Link de YouTube...">
+        <button id="loadB">Cargar</button>
+      </div>
+      <p class="disclaimer">Para uso personal</p>
+
+      <audio id="deckB" crossorigin="anonymous"></audio>
+    </div>
+  </div>
+
+  <!-- Playlist Module -->
+  <div class="playlist-module glass-card">
+    <h2>📋 Playlist</h2>
+
+    <div class="playlist-controls">
+      <input type="text" id="playlistUrlInput" placeholder="URL de playlist de YouTube..." list="playlist-history">
+      <datalist id="playlist-history"></datalist>
+      <button id="loadPlaylistBtn">Cargar Playlist</button>
+      <button id="playlistAutoMixBtn">▶ Automix</button>
+    </div>
+
+    <p id="automixStatus" class="status-message"></p>
+
+    <div id="playlistContainer" class="track-list">
+      <!-- Track items will be inserted here -->
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
