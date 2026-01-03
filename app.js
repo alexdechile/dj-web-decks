@@ -437,6 +437,7 @@ class Deck {
     this.accentColor = accentColor;
     this.isPlaying = false;
     this.cuePoint = 0;
+    this.isFading = false;
 
     // DOM Elements
     this.audio = document.getElementById(`deck${id}`);
@@ -579,6 +580,7 @@ class Deck {
     this.titleEl.textContent = title || 'Pista cargada';
     this.subtitleEl.textContent = artist || '';
     this.cuePoint = 0;
+    this.isFading = false; // Reset fading flag on new track load
   }
 
   extractTitle(url) {
@@ -586,6 +588,7 @@ class Deck {
     const match = url.match(/[?&]v=([^&]+)/);
     return match ? `Video: ${match[1]}` : 'Pista de YouTube';
   }
+
 
   setVolume(value) {
     this.gain.gain.value = value;
@@ -836,69 +839,95 @@ class PlaylistManager {
     this.autoMixBtn.classList.toggle('active', this.autoMixActive);
     this.autoMixBtn.textContent = this.autoMixActive ? '⏹ Detener' : '▶ Automix';
 
-    if (this.autoMixActive && this.tracks.length > 0) {
+    if (this.autoMixActive) {
       this.startPlaylistAutoMix();
+    } else if (this.autoMixTimer) {
+      clearInterval(this.autoMixTimer);
     }
   }
 
   async startPlaylistAutoMix() {
-    if (!this.autoMixActive || this.tracks.length === 0) return;
-
-    // Cargar primera pista en Deck A
-    await this.loadTrackToDeck(0, this.deckA);
-    this.currentIndex = 0;
-
-    // Pre-cargar segunda pista en Deck B
-    if (this.tracks.length > 1) {
-      await this.loadTrackToDeck(1, this.deckB);
+    if (!this.autoMixActive || this.tracks.length < 2) {
+      this.statusEl.textContent = 'Playlist necesita al menos 2 pistas para automix.';
+      this.toggleAutoMix(); // Turn it off
+      return;
     }
 
+    this.currentIndex = 0;
+    this.statusEl.textContent = 'Iniciando Automix...';
+
+    // Reset fading flags on both decks
+    this.deckA.isFading = false;
+    this.deckB.isFading = false;
+
+    // Load first two tracks
+    await this.loadTrackToDeck(this.currentIndex, this.deckA);
+    await this.loadTrackToDeck(this.currentIndex + 1, this.deckB);
+
+    // Start Deck A and set fader
     this.deckA.play();
     this.mixer.crossfader.value = 0;
     this.mixer.updateMix();
-
-    // Monitorear para auto-transición
+    
     this.monitorPlayback();
   }
 
   monitorPlayback() {
-    const check = () => {
-      if (!this.autoMixActive) return;
+    if (this.autoMixTimer) clearInterval(this.autoMixTimer);
 
-      const activeDeck = this.deckA.isPlaying ? this.deckA : (this.deckB.isPlaying ? this.deckB : null);
-
-      if (activeDeck) {
-        const timeLeft = activeDeck.audio.duration - activeDeck.audio.currentTime;
-
-        if (timeLeft < 30 && timeLeft > 28) {
-          this.handleAutoTransition(activeDeck);
-        }
+    this.autoMixTimer = setInterval(() => {
+      if (!this.autoMixActive) {
+        clearInterval(this.autoMixTimer);
+        return;
       }
 
-      setTimeout(check, 1000);
-    };
+      const faderValue = parseInt(this.mixer.crossfader.value);
+      
+      // Don't do anything if a transition is already happening
+      if (faderValue > 5 && faderValue < 95) {
+          return;
+      }
+      
+      const mainDeck = faderValue < 50 ? this.deckA : this.deckB;
+      
+      if (mainDeck.isPlaying && !mainDeck.isFading) {
+        const timeLeft = mainDeck.audio.duration - mainDeck.audio.currentTime;
 
-    check();
+        if (timeLeft < 30) {
+            mainDeck.isFading = true; // Mark as fading to prevent re-triggering
+            this.handleAutoTransition();
+        }
+      }
+    }, 2000); // Check every 2 seconds
   }
 
-  async handleAutoTransition(currentDeck) {
+  async handleAutoTransition() {
+    const faderValue = parseInt(this.mixer.crossfader.value);
+    const currentDeck = faderValue < 50 ? this.deckA : this.deckB;
     const nextDeck = currentDeck === this.deckA ? this.deckB : this.deckA;
-    const nextNextDeck = currentDeck;
 
-    // Reproducir el siguiente deck
-    await nextDeck.play();
+    if (!nextDeck.audio.src || nextDeck.audio.src.endsWith('/')) {
+        console.log('[AutoMix] Fin de la playlist.');
+        this.statusEl.textContent = 'Fin de la playlist.';
+        this.toggleAutoMix();
+        return;
+    }
 
-    // Transición suave
+    console.log(`[AutoMix] Iniciando transición desde ${currentDeck.id} hacia ${nextDeck.id}`);
+    nextDeck.play();
     this.mixer.doTransition(25000);
 
-    // Avanzar índice
-    this.currentIndex += 2;
+    // Update the index and preload the *next* track
+    this.currentIndex++;
+    const nextTrackIndex = this.currentIndex + 1;
 
-    // Pre-cargar la siguiente pista
-    if (this.currentIndex < this.tracks.length) {
-      await this.loadTrackToDeck(this.currentIndex, nextNextDeck);
+    if (nextTrackIndex < this.tracks.length) {
+        // Preload onto the deck that is now fading out
+        console.log(`[AutoMix] Precargando pista ${nextTrackIndex} en Deck ${currentDeck.id}`);
+        await this.loadTrackToDeck(nextTrackIndex, currentDeck);
     } else {
-      this.statusEl.textContent = 'Última pista en reproducción';
+        console.log('[AutoMix] No hay más pistas para precargar.');
+        currentDeck.isFading = true; // Mark the last fading deck to stop checks
     }
   }
 
