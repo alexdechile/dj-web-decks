@@ -243,6 +243,193 @@ class MixRecorder {
   }
 }
 
+// ===== CHROMECAST MANAGER =====
+class ChromecastManager {
+  constructor() {
+    this.devices = [];
+    this.selectedDevice = null;
+
+    // DOM Elements
+    this.castBtn = document.getElementById('castBtn');
+    this.modal = document.getElementById('castModal');
+    this.deviceListEl = document.getElementById('castDeviceList');
+    this.closeBtn = document.getElementById('closeCastModal');
+    this.modalTitle = this.modal.querySelector('h3');
+
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    this.castBtn.addEventListener('click', () => this.openModal());
+    this.closeBtn.addEventListener('click', () => this.closeModal());
+    this.modal.addEventListener('click', (e) => {
+      if (e.target === this.modal) {
+        this.closeModal();
+      }
+    });
+  }
+
+  async openModal() {
+    this.modalTitle.textContent = 'Enviar a Dispositivo Chromecast';
+    this.modal.classList.remove('hidden');
+    this.deviceListEl.innerHTML = '<p>Buscando dispositivos...</p>';
+    
+    try {
+      const response = await fetch('/api/chromecast-devices');
+      this.devices = await response.json();
+      this.renderDevices();
+    } catch (error) {
+      console.error('[Chromecast] Error al obtener dispositivos:', error);
+      this.deviceListEl.innerHTML = '<p style="color: #ff4444;">Error al buscar dispositivos.</p>';
+    }
+  }
+
+  closeModal() {
+    this.modal.classList.add('hidden');
+  }
+
+  renderDevices() {
+    this.deviceListEl.innerHTML = ''; // Clear current list
+
+    if (this.devices.length === 0) {
+      this.deviceListEl.innerHTML = '<p>No se encontraron dispositivos.</p>';
+      return;
+    }
+
+    this.devices.forEach(device => {
+      const deviceEl = document.createElement('div');
+      deviceEl.className = 'device-item';
+      deviceEl.textContent = device.name;
+      deviceEl.addEventListener('click', () => this.selectDevice(device));
+      this.deviceListEl.appendChild(deviceEl);
+    });
+  }
+
+  async selectDevice(device) {
+    this.selectedDevice = device;
+    console.log('[Chromecast] Dispositivo seleccionado:', device);
+    this.closeModal();
+
+    // Prioritize Deck A, fallback to Deck B
+    const deckToCast = deckA.audio.src && !deckA.audio.src.endsWith('/') ? deckA : deckB;
+    const mediaElement = deckToCast.audio;
+    const trackTitle = deckToCast.titleEl.textContent;
+
+    if (!mediaElement.src || mediaElement.src.endsWith('/')) {
+      playlistManager.statusEl.textContent = 'No hay pista para transmitir.';
+      playlistManager.statusEl.classList.add('error');
+      setTimeout(() => playlistManager.statusEl.classList.remove('error'), 3000);
+      return;
+    }
+
+    // Extract the path from the full URL (e.g., /temp_audio/video-id.webm)
+    const mediaUrl = new URL(mediaElement.src).pathname;
+
+    // Show feedback to user
+    const originalStatus = playlistManager.statusEl.textContent;
+    playlistManager.statusEl.textContent = `Enviando a ${device.name}...`;
+    playlistManager.statusEl.classList.remove('error');
+
+    try {
+      const response = await fetch('/api/cast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device, mediaUrl, trackTitle })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.details || result.error);
+      }
+
+      playlistManager.statusEl.textContent = `✔ Reproduciendo en ${device.name}`;
+
+    } catch (error) {
+      console.error('[Chromecast] Error al iniciar el cast:', error);
+      playlistManager.statusEl.textContent = `✖ Error: ${error.message}`;
+      playlistManager.statusEl.classList.add('error');
+    } finally {
+      // Restore status after a few seconds
+      setTimeout(() => {
+        if (!playlistManager.statusEl.classList.contains('error')) {
+          playlistManager.statusEl.textContent = originalStatus;
+        }
+      }, 8000);
+    }
+  }
+}
+
+// ===== AUDIO OUTPUT MANAGER =====
+class AudioOutputManager {
+  constructor() {
+    // DOM Elements
+    this.outputBtn = document.getElementById('bluetoothBtn');
+    this.modal = document.getElementById('castModal');
+    this.deviceListEl = document.getElementById('castDeviceList');
+    this.modalTitle = this.modal.querySelector('h3');
+
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    this.outputBtn.addEventListener('click', () => this.openAudioOutputSelector());
+  }
+
+  async openAudioOutputSelector() {
+    if (!('setSinkId' in HTMLMediaElement.prototype)) {
+      alert('Tu navegador no soporta la selección de salida de audio.');
+      return;
+    }
+
+    this.modalTitle.textContent = 'Seleccionar Salida de Audio';
+    this.deviceListEl.innerHTML = '<p>Buscando salidas de audio...</p>';
+    this.modal.classList.remove('hidden');
+
+    try {
+      // Request permission to access devices, otherwise labels might be empty
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+
+      this.deviceListEl.innerHTML = ''; // Clear
+      if (audioOutputs.length === 0) {
+          this.deviceListEl.innerHTML = '<p>No se encontraron salidas de audio.</p>';
+          return;
+      }
+
+      audioOutputs.forEach(device => {
+        const deviceEl = document.createElement('div');
+        deviceEl.className = 'device-item';
+        deviceEl.textContent = device.label || `Dispositivo ${this.deviceListEl.children.length + 1}`;
+        deviceEl.addEventListener('click', () => this.setAudioOutput(device.deviceId, device.label));
+        this.deviceListEl.appendChild(deviceEl);
+      });
+
+    } catch (error) {
+      console.error('[AudioOutput] Error enumerando dispositivos:', error);
+      this.deviceListEl.innerHTML = '<p style="color: #ff4444;">Error al buscar dispositivos.</p>';
+    }
+  }
+
+  async setAudioOutput(deviceId, deviceLabel) {
+    try {
+      await Promise.all([
+        deckA.audio.setSinkId(deviceId),
+        deckB.audio.setSinkId(deviceId)
+      ]);
+      console.log(`[AudioOutput] Salida de audio cambiada a: ${deviceLabel}`);
+      playlistManager.statusEl.textContent = `✔ Audio enviado a: ${deviceLabel.substring(0, 30)}...`;
+      setTimeout(() => { playlistManager.statusEl.textContent = '' }, 5000);
+    } catch (error) {
+      console.error('[AudioOutput] Error al cambiar la salida de audio:', error);
+      playlistManager.statusEl.textContent = `✖ Error al cambiar salida de audio.`;
+      playlistManager.statusEl.classList.add('error');
+    } finally {
+        document.getElementById('closeCastModal').click();
+    }
+  }
+}
 
 class Deck {
   constructor(id, accentColor) {
@@ -777,12 +964,19 @@ let deckA, deckB;
 let mixer;
 let playlistManager;
 let mixRecorder;
+let chromecastManager;
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[DJ Web Decks] Iniciando...');
 
   // Initialize Wake Lock
   wakeLockManager = new WakeLockManager();
+  
+  // Initialize Chromecast Manager
+  chromecastManager = new ChromecastManager();
+  
+  // Initialize Audio Output Manager
+  new AudioOutputManager();
 
   // Initialize Decks
   deckA = new Deck('A', '#00d4ff');

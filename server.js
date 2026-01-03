@@ -3,8 +3,11 @@ import { URL } from "url";
 import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import axios from "axios";
 import { spawn } from "child_process";
+import mdns from 'mdns-js';
+import GoogleHomePlayer from 'google-home-player';
 
 const require = createRequire(import.meta.url);
 const YTDlpWrap = require("yt-dlp-wrap").default;
@@ -13,6 +16,64 @@ const app = express();
 app.use(express.json({ limit: '500mb' }));
 app.use(express.raw({ type: 'audio/*', limit: '500mb' }));
 const PORT = 3555;
+
+// --- Helper to get Local IP ---
+const getLocalIp = () => {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return 'localhost';
+};
+
+// --- Chromecast Discovery ---
+const chromecastDevices = [];
+const serviceType = '_googlecast._tcp.local';
+console.log('[Chromecast] Iniciando búsqueda de dispositivos...');
+
+try {
+  const browser = mdns.createBrowser(serviceType);
+
+  browser.on('ready', () => {
+    console.log('[Chromecast] Buscando dispositivos en la red...');
+    browser.discover();
+  });
+
+  browser.on('error', (err) => {
+    console.error('[Chromecast] Error en el buscador de dispositivos. La detección puede no funcionar:', err);
+  });
+
+  browser.on('update', (data) => {
+    if (data.fullname && data.addresses && data.port) {
+      const deviceName = data.fullname.replace(`.${serviceType}`, '').replace(/\._sub\..*/, '');
+      const existingDevice = chromecastDevices.find(d => d.name === deviceName);
+      
+      if (!existingDevice) {
+        const device = {
+          name: deviceName,
+          host: data.addresses[0],
+          port: data.port,
+        };
+        console.log(`[Chromecast] Dispositivo añadido: ${device.name} (${device.host}:${device.port})`);
+        chromecastDevices.push(device);
+      }
+    }
+  });
+
+  setInterval(() => {
+    console.log('[Chromecast] Limpiando y redescubriendo dispositivos...');
+    chromecastDevices.length = 0;
+    browser.discover();
+  }, 300000);
+
+} catch (err) {
+  console.error("[Chromecast] Error al inicializar mDNS. La detección de Chromecast no funcionará.", err);
+}
+// -------------------------
 
 const binaryName = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
 const binaryPath = path.join(process.cwd(), binaryName);
@@ -29,7 +90,6 @@ async function initialize() {
     }
     ytDlpWrap = new YTDlpWrap(binaryPath);
 
-    // --- Temporary Audio Directory Setup ---
     const tempDir = path.join(process.cwd(), 'temp_audio');
     if (fs.existsSync(tempDir)) {
       console.log('[Setup] Cleaning up old temporary files...');
@@ -38,7 +98,6 @@ async function initialize() {
     fs.mkdirSync(tempDir);
     console.log('[Setup] Temporary audio directory created.');
     app.use('/temp_audio', express.static(tempDir));
-    // -----------------------------------------
 
     app.listen(PORT, () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
@@ -50,6 +109,47 @@ async function initialize() {
 }
 
 app.use(express.static("."));
+
+// --- API Endpoints ---
+
+app.get('/api/chromecast-devices', (req, res) => {
+  res.json(chromecastDevices);
+});
+
+app.post('/api/cast', async (req, res) => {
+  const { device, mediaUrl } = req.body;
+
+  if (!device || !mediaUrl) {
+    return res.status(400).json({ error: 'Faltan datos del dispositivo o del audio.' });
+  }
+
+  try {
+    const localIp = getLocalIp();
+    if (localIp === 'localhost') {
+      throw new Error('No se pudo determinar la IP local. Asegúrate de estar conectado a una red.');
+    }
+
+    const fullMediaUrl = `http://${localIp}:${PORT}${mediaUrl}`;
+    console.log(`[Cast] Intentando transmitir a ${device.name} (${device.host})`);
+    console.log(`[Cast] URL del medio: ${fullMediaUrl}`);
+
+    const player = new GoogleHomePlayer(device.host, device.name);
+
+    const playPromise = player.play(fullMediaUrl);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout: No se pudo conectar al dispositivo en 10 segundos.')), 10000)
+    );
+
+    await Promise.race([playPromise, timeoutPromise]);
+
+    console.log(`[Cast] Reproduciendo en ${device.name}.`);
+    res.json({ success: true, message: `Reproduciendo en ${device.name}` });
+
+  } catch (error) {
+    console.error('[Cast] Error al transmitir:', error.message);
+    res.status(500).json({ error: 'No se pudo iniciar la transmisión.', details: error.message });
+  }
+});
 
 app.get("/get-audio", async (req, res) => {
   try {
@@ -92,7 +192,6 @@ app.get('/get-playlist-info', async (req, res) => {
 
     const playlistData = JSON.parse(stdout);
 
-    // Si la URL no es una playlist sino un video, crear una playlist de 1 canción
     if (!playlistData.entries || !Array.isArray(playlistData.entries)) {
       if (playlistData.id && playlistData.title) {
         console.log('[yt-dlp] La URL parece ser de un solo video. Creando playlist de una canción.');
@@ -135,7 +234,6 @@ app.post('/download-track', async (req, res) => {
     }
     const tempDir = path.join(process.cwd(), 'temp_audio');
 
-    // Primero, verificar si el archivo ya existe con cualquier extensión
     const existingFile = fs.readdirSync(tempDir).find(file => file.startsWith(videoId));
     if (existingFile) {
       console.log(`[Download] Track ${videoId} already exists as ${existingFile}.`);
@@ -148,12 +246,11 @@ app.post('/download-track', async (req, res) => {
     console.log(`[Download] Starting download for ${videoId}...`);
     await ytDlpWrap.execPromise([
       videoUrl,
-      '-f', 'bestaudio', // Simplificado para mayor compatibilidad
+      '-f', 'bestaudio',
       '-o', outputPath,
     ]);
     console.log(`[Download] Finished download for ${videoId}`);
 
-    // Find the actual downloaded file extension
     const downloadedFile = fs.readdirSync(tempDir).find(file => file.startsWith(videoId));
     if (!downloadedFile) {
       throw new Error('File not found after download');
@@ -171,7 +268,6 @@ app.post('/download-track', async (req, res) => {
   }
 });
 
-// ===== CONVERT TO MP3 =====
 app.post('/convert-to-mp3', async (req, res) => {
   try {
     const timestamp = Date.now();
@@ -179,66 +275,46 @@ app.post('/convert-to-mp3', async (req, res) => {
     const inputPath = path.join(tempDir, `mix-${timestamp}.webm`);
     const outputPath = path.join(tempDir, `mix-${timestamp}.mp3`);
 
-    // Obtener el audio del body (puede venir como base64 en JSON o como raw)
     let audioBuffer;
     if (req.body.audio) {
-      // Viene como base64 en JSON
       const base64Data = req.body.audio.replace(/^data:audio\/\w+;base64,/, '');
       audioBuffer = Buffer.from(base64Data, 'base64');
     } else if (Buffer.isBuffer(req.body)) {
-      // Viene como raw
       audioBuffer = req.body;
     } else {
       return res.status(400).json({ error: 'No se recibió audio' });
     }
 
     console.log(`[Convert] Recibido audio: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-    // Guardar WebM temporal
     fs.writeFileSync(inputPath, audioBuffer);
     console.log(`[Convert] Archivo temporal guardado: ${inputPath}`);
 
-    // Convertir con FFmpeg a MP3 320kbps
     const ffmpegPath = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
 
     await new Promise((resolve, reject) => {
       const ffmpeg = spawn(ffmpegPath, [
         '-i', inputPath,
-        '-vn',                    // Sin video
-        '-acodec', 'libmp3lame',  // Codec MP3
-        '-ab', '320k',            // 320 kbps
-        '-ar', '44100',           // 44.1 kHz
-        '-ac', '2',               // Stereo
-        '-y',                     // Sobrescribir
+        '-vn',
+        '-acodec', 'libmp3lame',
+        '-ab', '320k',
+        '-ar', '44100',
+        '-ac', '2',
+        '-y',
         outputPath
       ]);
 
       let stderr = '';
-      ffmpeg.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      ffmpeg.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`FFmpeg error (code ${code}): ${stderr}`));
-        }
-      });
-
+      ffmpeg.stderr.on('data', (data) => { stderr += data.toString(); });
+      ffmpeg.on('close', (code) => code === 0 ? resolve() : reject(new Error(`FFmpeg error (code ${code}): ${stderr}`)));
       ffmpeg.on('error', reject);
     });
 
     console.log(`[Convert] Conversión completada: ${outputPath}`);
-
-    // Leer el MP3 y enviarlo
     const mp3Buffer = fs.readFileSync(outputPath);
     const mp3Size = (mp3Buffer.length / 1024 / 1024).toFixed(2);
     console.log(`[Convert] Enviando MP3: ${mp3Size} MB`);
 
-    // Limpiar archivos temporales
     fs.unlinkSync(inputPath);
-    // Mantener el MP3 por si quiere descargarlo de nuevo
 
     res.set({
       'Content-Type': 'audio/mpeg',
