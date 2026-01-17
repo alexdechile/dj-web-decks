@@ -185,21 +185,13 @@ class MixRecorder {
       console.log('[Recorder] Enviando al servidor para conversión a MP3...');
       console.log('[Recorder] Tamaño WebM:', this.formatBytes(this.recordedBlob.size));
 
-      // Convertir Blob a base64
-      const reader = new FileReader();
-      const base64Promise = new Promise((resolve) => {
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(this.recordedBlob);
-      });
-      const base64Audio = await base64Promise;
-
       // Enviar al servidor
       const response = await fetch('/convert-to-mp3', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'audio/webm'
         },
-        body: JSON.stringify({ audio: base64Audio })
+        body: this.recordedBlob
       });
 
       if (!response.ok) {
@@ -255,6 +247,10 @@ class ChromecastManager {
     this.deviceListEl = document.getElementById('castDeviceList');
     this.closeBtn = document.getElementById('closeCastModal');
     this.modalTitle = this.modal.querySelector('h3');
+    
+    // Manual IP
+    this.manualIpInput = document.getElementById('manualIpInput');
+    this.manualCastBtn = document.getElementById('manualCastBtn');
 
     this.setupEventListeners();
   }
@@ -266,6 +262,14 @@ class ChromecastManager {
       if (e.target === this.modal) {
         this.closeModal();
       }
+    });
+
+    // Manual connect
+    this.manualCastBtn.addEventListener('click', () => {
+        const ip = this.manualIpInput.value.trim();
+        if (ip) {
+            this.selectDevice({ name: 'Dispositivo Manual', host: ip, port: 8009 });
+        }
     });
   }
 
@@ -322,8 +326,9 @@ class ChromecastManager {
       return;
     }
 
-    // Extract the path from the full URL (e.g., /temp_audio/video-id.webm)
-    const mediaUrl = new URL(mediaElement.src).pathname;
+    // Extract the path and query from the full URL
+    const urlObj = new URL(mediaElement.src);
+    const mediaUrl = urlObj.pathname + urlObj.search;
 
     // Show feedback to user
     const originalStatus = playlistManager.statusEl.textContent;

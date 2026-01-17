@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import axios from "axios";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import mdns from 'mdns-js';
 import GoogleHomePlayer from 'google-home-player';
 
@@ -16,62 +16,95 @@ const app = express();
 app.use(express.json({ limit: '500mb' }));
 app.use(express.raw({ type: 'audio/*', limit: '500mb' }));
 const PORT = 3555;
+const cookiesPath = path.join(process.cwd(), 'cookies.txt');
+
+const getCommonArgs = () => {
+  if (fs.existsSync(cookiesPath)) {
+    console.log('[yt-dlp] Using cookies.txt');
+    return ['--cookies', cookiesPath];
+  }
+  return [];
+};
 
 // --- Helper to get Local IP ---
 const getLocalIp = () => {
   const nets = os.networkInterfaces();
+  const results = {};
+
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]) {
+      // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
       if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
+        if (!results[name]) {
+          results[name] = [];
+        }
+        results[name].push(net.address);
       }
     }
   }
-  return 'localhost';
+  
+  // Prioritize common LAN interfaces
+  const prioritized = ['eth0', 'en0', 'wlan0', 'wi-fi', 'ethernet'];
+  for (const name of prioritized) {
+      if (results[name] && results[name].length > 0) return results[name][0];
+  }
+
+  // Fallback: take the first one that doesn't look like docker (often 172.x)
+  for (const name of Object.keys(results)) {
+      if (!name.includes('docker') && !name.includes('veth') && !name.includes('br-')) {
+          return results[name][0];
+      }
+  }
+
+  // Last resort
+  const allIps = Object.values(results).flat();
+  return allIps.length > 0 ? allIps[0] : 'localhost';
 };
 
 // --- Chromecast Discovery ---
 const chromecastDevices = [];
-const serviceType = '_googlecast._tcp.local';
 console.log('[Chromecast] Iniciando búsqueda de dispositivos...');
 
 try {
-  const browser = mdns.createBrowser(serviceType);
+  // mdns-js typical usage requires the service type object, not just a string
+  const browser = mdns.createBrowser(mdns.tcp('googlecast'));
 
   browser.on('ready', () => {
-    console.log('[Chromecast] Buscando dispositivos en la red...');
+    console.log('[Chromecast] Explorador mDNS listo. Buscando...');
     browser.discover();
   });
 
   browser.on('error', (err) => {
-    console.error('[Chromecast] Error en el buscador de dispositivos. La detección puede no funcionar:', err);
+    console.error('[Chromecast] Error en el buscador de dispositivos:', err);
   });
 
   browser.on('update', (data) => {
-    if (data.fullname && data.addresses && data.port) {
-      const deviceName = data.fullname.replace(`.${serviceType}`, '').replace(/\._sub\..*/, '');
-      const existingDevice = chromecastDevices.find(d => d.name === deviceName);
-      
-      if (!existingDevice) {
-        const device = {
-          name: deviceName,
-          host: data.addresses[0],
-          port: data.port,
-        };
-        console.log(`[Chromecast] Dispositivo añadido: ${device.name} (${device.host}:${device.port})`);
-        chromecastDevices.push(device);
-      }
+    // Check if it's a Google Cast device
+    if (data.type && data.type.some(t => t.name === 'googlecast')) {
+        const ip = data.addresses && data.addresses[0];
+        const port = data.port;
+        const name = data.fullname 
+            ? data.fullname.split('.')[0] 
+            : (data.txt && data.txt.includes('fn=') ? data.txt.find(t => t.startsWith('fn=')).split('=')[1] : 'Unknown Cast');
+
+        if (ip && port) {
+            const existingDevice = chromecastDevices.find(d => d.host === ip);
+            if (!existingDevice) {
+                const device = { name, host: ip, port };
+                console.log(`[Chromecast] Encontrado: ${device.name} en ${device.host}`);
+                chromecastDevices.push(device);
+            }
+        }
     }
   });
 
   setInterval(() => {
-    console.log('[Chromecast] Limpiando y redescubriendo dispositivos...');
-    chromecastDevices.length = 0;
+    // console.log('[Chromecast] Actualizando lista...');
     browser.discover();
-  }, 300000);
+  }, 60000);
 
 } catch (err) {
-  console.error("[Chromecast] Error al inicializar mDNS. La detección de Chromecast no funcionará.", err);
+  console.error("[Chromecast] Error fatal al inicializar mDNS:", err);
 }
 // -------------------------
 
@@ -81,14 +114,31 @@ let ytDlpWrap;
 
 async function initialize() {
   try {
-    if (!fs.existsSync(binaryPath)) {
-      console.log(`[Setup] yt-dlp binary not found. Downloading to: ${binaryPath}`);
-      await YTDlpWrap.downloadFromGithub(binaryPath);
-      console.log("[Setup] Download complete.");
-    } else {
-      console.log("[Setup] yt-dlp binary already exists.");
+    let finalBinaryPath = binaryPath;
+    let useSystemBinary = false;
+
+    try {
+        const systemPath = execSync('which yt-dlp', { encoding: 'utf-8' }).trim();
+        if (systemPath) {
+            console.log(`[Setup] System yt-dlp found at: ${systemPath}`);
+            finalBinaryPath = systemPath;
+            useSystemBinary = true;
+        }
+    } catch (e) {
+        // Ignore
     }
-    ytDlpWrap = new YTDlpWrap(binaryPath);
+
+    if (!useSystemBinary) {
+        if (!fs.existsSync(binaryPath)) {
+          console.log(`[Setup] yt-dlp binary not found. Downloading to: ${binaryPath}`);
+          await YTDlpWrap.downloadFromGithub(binaryPath);
+          console.log("[Setup] Download complete.");
+        } else {
+          console.log("[Setup] yt-dlp binary already exists.");
+        }
+    }
+    
+    ytDlpWrap = new YTDlpWrap(finalBinaryPath);
 
     const tempDir = path.join(process.cwd(), 'temp_audio');
     if (fs.existsSync(tempDir)) {
@@ -155,7 +205,8 @@ app.get("/get-audio", async (req, res) => {
   try {
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: "No se recibió URL" });
-    const audioUrl = await ytDlpWrap.execPromise([url, "-f", "bestaudio", "-g"]);
+    const args = [url, "-f", "bestaudio", "-g", ...getCommonArgs()];
+    const audioUrl = await ytDlpWrap.execPromise(args);
     res.json({ audioUrl: `/proxy?v=${encodeURIComponent(audioUrl)}` });
   } catch (error) {
     res.status(500).json({
@@ -169,7 +220,14 @@ app.get('/proxy', async (req, res) => {
   try {
     const videoUrl = decodeURIComponent(req.query.v);
     if (!videoUrl) return res.status(400).send('No se proporcionó URL de video.');
-    const response = await axios({ method: 'get', url: videoUrl, responseType: 'stream' });
+    const response = await axios({ 
+      method: 'get', 
+      url: videoUrl, 
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
     res.set('Content-Type', response.headers['content-type']);
     res.set('Content-Length', response.headers['content-length']);
     response.data.pipe(res);
@@ -184,11 +242,13 @@ app.get('/get-playlist-info', async (req, res) => {
     if (!playlistUrl) return res.status(400).json({ error: 'No se proporcionó URL de la playlist' });
 
     console.log(`[yt-dlp] Obteniendo información de la playlist: ${playlistUrl}`);
-    const stdout = await ytDlpWrap.execPromise([
+    const args = [
       playlistUrl,
       '--dump-single-json',
-      '--flat-playlist'
-    ]);
+      '--flat-playlist',
+      ...getCommonArgs()
+    ];
+    const stdout = await ytDlpWrap.execPromise(args);
 
     const playlistData = JSON.parse(stdout);
 
@@ -244,11 +304,13 @@ app.post('/download-track', async (req, res) => {
     const outputPath = path.join(tempDir, `${videoId}.%(ext)s`);
 
     console.log(`[Download] Starting download for ${videoId}...`);
-    await ytDlpWrap.execPromise([
+    const args = [
       videoUrl,
       '-f', 'bestaudio',
       '-o', outputPath,
-    ]);
+      ...getCommonArgs()
+    ];
+    await ytDlpWrap.execPromise(args);
     console.log(`[Download] Finished download for ${videoId}`);
 
     const downloadedFile = fs.readdirSync(tempDir).find(file => file.startsWith(videoId));
@@ -275,14 +337,10 @@ app.post('/convert-to-mp3', async (req, res) => {
     const inputPath = path.join(tempDir, `mix-${timestamp}.webm`);
     const outputPath = path.join(tempDir, `mix-${timestamp}.mp3`);
 
-    let audioBuffer;
-    if (req.body.audio) {
-      const base64Data = req.body.audio.replace(/^data:audio\/\w+;base64,/, '');
-      audioBuffer = Buffer.from(base64Data, 'base64');
-    } else if (Buffer.isBuffer(req.body)) {
-      audioBuffer = req.body;
-    } else {
-      return res.status(400).json({ error: 'No se recibió audio' });
+    let audioBuffer = req.body;
+    
+    if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) {
+      return res.status(400).json({ error: 'No se recibió audio válido o el cuerpo está vacío.' });
     }
 
     console.log(`[Convert] Recibido audio: ${(audioBuffer.length / 1024 / 1024).toFixed(2)} MB`);
