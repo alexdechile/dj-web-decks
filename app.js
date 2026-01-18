@@ -1025,6 +1025,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Playlist Manager
   playlistManager = new PlaylistManager(deckA, deckB, mixer);
 
+  // Cargar playlist por defecto
+  const defaultPlaylist = "https://youtube.com/playlist?list=PLePRSIVqXBedaQ4XE3cEB6YaQvWnK-OWi&si=bSiHWYAYLVYLl8cq";
+  document.getElementById('playlistUrlInput').value = defaultPlaylist;
+  setTimeout(() => playlistManager.loadPlaylist(), 500);
+
   // Setup Keyboard Shortcuts
   setupKeyboardShortcuts(deckA, deckB);
 
