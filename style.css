@@ -958,3 +958,43 @@ body {
 .hidden {
   display: none !important;
 }
+
+/* ===== TRACK ACTIONS ===== */
+.track-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: 1rem;
+}
+
+.load-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.load-btn:hover {
+  transform: scale(1.1);
+  color: var(--bg-primary);
+}
+
+.load-btn.load-a:hover {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+.load-btn.load-b:hover {
+  background: var(--accent-magenta);
+  border-color: var(--accent-magenta);
+  box-shadow: var(--glow-magenta);
+}

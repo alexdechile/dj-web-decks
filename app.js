@@ -790,16 +790,32 @@ class PlaylistManager {
           <div class="artist">${track.uploader || ''}</div>
         </div>
         <span class="duration">${this.formatDuration(track.duration)}</span>
+        <div class="track-actions">
+          <button class="load-btn load-a" data-deck="A" data-index="${index}" title="Cargar en Deck A">A</button>
+          <button class="load-btn load-b" data-deck="B" data-index="${index}" title="Cargar en Deck B">B</button>
+        </div>
       </div>
     `).join('');
 
     // Event listeners para cada track
     this.container.querySelectorAll('.track-item').forEach(item => {
+      // Botones de carga explícita
+      item.querySelectorAll('.load-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const index = parseInt(btn.dataset.index);
+          const deck = btn.dataset.deck === 'A' ? this.deckA : this.deckB;
+          this.loadTrackToDeck(index, deck);
+        });
+      });
+
+      // Click en la fila (Carga en Deck A por defecto)
       item.addEventListener('click', () => {
         const index = parseInt(item.dataset.index);
         this.loadTrackToDeck(index, this.deckA);
       });
 
+      // Click derecho (Carga en Deck B)
       item.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const index = parseInt(item.dataset.index);
