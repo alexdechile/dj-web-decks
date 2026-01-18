@@ -998,3 +998,59 @@ body {
   border-color: var(--accent-magenta);
   box-shadow: var(--glow-magenta);
 }
+
+/* ===== FAVORITES MODAL ===== */
+.add-fav-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.add-fav-group input {
+  flex: 1;
+  padding: 0.5rem;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.fav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fav-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-green);
+}
+
+.fav-item span {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.fav-delete-btn {
+  background: none;
+  border: none;
+  color: #ff4444;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.fav-delete-btn:hover {
+  background: rgba(255, 68, 68, 0.2);
+}

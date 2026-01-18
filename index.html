@@ -149,7 +149,8 @@
     <div class="playlist-controls">
       <input type="text" id="playlistUrlInput" placeholder="URL de playlist de YouTube..." list="playlist-history">
       <datalist id="playlist-history"></datalist>
-      <button id="loadPlaylistBtn">Cargar Playlist</button>
+      <button id="loadPlaylistBtn">Cargar</button>
+      <button id="favPlaylistBtn" title="Mis Listas Favoritas">⭐</button>
       <button id="playlistAutoMixBtn">▶ Automix</button>
     </div>
 
@@ -157,6 +158,24 @@
 
     <div id="playlistContainer" class="track-list">
       <!-- Track items will be inserted here -->
+    </div>
+  </div>
+
+  <!-- Favorites Modal -->
+  <div id="favModal" class="modal-overlay hidden">
+    <div class="modal-content glass-card">
+      <h3>Mis Playlists</h3>
+      
+      <div class="add-fav-group">
+        <input type="text" id="favNameInput" placeholder="Nombre para esta lista...">
+        <button id="saveFavBtn" class="btn-mix">Guardar Actual</button>
+      </div>
+
+      <div id="favList" class="device-list">
+        <!-- Favorites will be here -->
+      </div>
+
+      <button id="closeFavModal" class="btn-mix" style="margin-top: 1rem;">Cerrar</button>
     </div>
   </div>
 

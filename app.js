@@ -1008,6 +1008,135 @@ function setupKeyboardShortcuts(deckA, deckB) {
   });
 }
 
+// ===== FAVORITES MANAGER =====
+class FavoritesManager {
+  constructor(playlistManager) {
+    this.playlistManager = playlistManager;
+    this.favorites = [];
+
+    // DOM Elements
+    this.btn = document.getElementById('favPlaylistBtn');
+    this.modal = document.getElementById('favModal');
+    this.closeBtn = document.getElementById('closeFavModal');
+    this.listEl = document.getElementById('favList');
+    this.saveBtn = document.getElementById('saveFavBtn');
+    this.nameInput = document.getElementById('favNameInput');
+    this.urlInput = document.getElementById('playlistUrlInput');
+
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    this.btn.addEventListener('click', () => this.open());
+    this.closeBtn.addEventListener('click', () => this.close());
+    this.modal.addEventListener('click', (e) => {
+      if (e.target === this.modal) this.close();
+    });
+
+    this.saveBtn.addEventListener('click', () => this.addFavorite());
+  }
+
+  async open() {
+    this.modal.classList.remove('hidden');
+    await this.fetchFavorites();
+  }
+
+  close() {
+    this.modal.classList.add('hidden');
+  }
+
+  async fetchFavorites() {
+    this.listEl.innerHTML = '<p>Cargando favoritos...</p>';
+    try {
+      const res = await fetch('/api/favorites');
+      this.favorites = await res.json();
+      this.render();
+    } catch (e) {
+      this.listEl.innerHTML = '<p class="error">Error cargando favoritos</p>';
+    }
+  }
+
+  render() {
+    if (this.favorites.length === 0) {
+      this.listEl.innerHTML = '<p>No tienes listas guardadas.</p>';
+      return;
+    }
+
+    this.listEl.innerHTML = '';
+    this.favorites.forEach(fav => {
+      const item = document.createElement('div');
+      item.className = 'fav-item';
+      
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = fav.name;
+      nameSpan.onclick = () => this.loadFavorite(fav.url);
+      
+      const delBtn = document.createElement('button');
+      delBtn.className = 'fav-delete-btn';
+      delBtn.innerHTML = '×';
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        if(confirm(`¿Borrar "${fav.name}"?`)) this.deleteFavorite(fav.id);
+      };
+
+      item.appendChild(nameSpan);
+      item.appendChild(delBtn);
+      this.listEl.appendChild(item);
+    });
+  }
+
+  loadFavorite(url) {
+    this.urlInput.value = url;
+    this.playlistManager.loadPlaylist();
+    this.close();
+  }
+
+  async addFavorite() {
+    const url = this.urlInput.value.trim();
+    const name = this.nameInput.value.trim();
+
+    if (!url || !name) {
+      alert('Ingresa una URL válida y un nombre.');
+      return;
+    }
+
+    try {
+      this.saveBtn.disabled = true;
+      this.saveBtn.textContent = 'Guardando...';
+
+      const res = await fetch('/api/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url })
+      });
+
+      if (res.ok) {
+        this.nameInput.value = '';
+        await this.fetchFavorites();
+      } else {
+        alert('Error al guardar.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Error de conexión.');
+    } finally {
+      this.saveBtn.disabled = false;
+      this.saveBtn.textContent = 'Guardar Actual';
+    }
+  }
+
+  async deleteFavorite(id) {
+    try {
+      const res = await fetch(`/api/favorites/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        await this.fetchFavorites();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+}
+
 // ===== INITIALIZATION =====
 let wakeLockManager;
 let deckA, deckB;
@@ -1015,6 +1144,7 @@ let mixer;
 let playlistManager;
 let mixRecorder;
 let chromecastManager;
+let favoritesManager;
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('[DJ Web Decks] Iniciando...');
@@ -1040,6 +1170,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Playlist Manager
   playlistManager = new PlaylistManager(deckA, deckB, mixer);
+
+  // Initialize Favorites Manager
+  favoritesManager = new FavoritesManager(playlistManager);
 
   // Cargar playlist por defecto
   const defaultPlaylist = "https://youtube.com/playlist?list=PLePRSIVqXBedaQ4XE3cEB6YaQvWnK-OWi&si=bSiHWYAYLVYLl8cq";

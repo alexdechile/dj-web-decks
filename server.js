@@ -397,4 +397,51 @@ app.post('/convert-to-mp3', async (req, res) => {
   }
 });
 
+// --- Favorites Management ---
+const favoritesPath = path.join(process.cwd(), 'favorites.json');
+
+// Ensure favorites file exists
+if (!fs.existsSync(favoritesPath)) {
+  fs.writeFileSync(favoritesPath, JSON.stringify([]));
+}
+
+app.get('/api/favorites', (req, res) => {
+  try {
+    const data = fs.readFileSync(favoritesPath, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+app.post('/api/favorites', (req, res) => {
+  try {
+    const { name, url } = req.body;
+    if (!name || !url) return res.status(400).json({ error: 'Falta nombre o URL' });
+
+    const favorites = JSON.parse(fs.readFileSync(favoritesPath, 'utf8') || '[]');
+    // Check if exists
+    if (!favorites.some(f => f.url === url)) {
+      favorites.push({ id: Date.now().toString(), name, url });
+      fs.writeFileSync(favoritesPath, JSON.stringify(favorites, null, 2));
+    }
+    
+    res.json({ success: true, favorites });
+  } catch (err) {
+    res.status(500).json({ error: 'Error guardando favorito' });
+  }
+});
+
+app.delete('/api/favorites/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    let favorites = JSON.parse(fs.readFileSync(favoritesPath, 'utf8') || '[]');
+    favorites = favorites.filter(f => f.id !== id);
+    fs.writeFileSync(favoritesPath, JSON.stringify(favorites, null, 2));
+    res.json({ success: true, favorites });
+  } catch (err) {
+    res.status(500).json({ error: 'Error eliminando favorito' });
+  }
+});
+
 initialize();
