@@ -163,6 +163,13 @@ app.use(express.static("."));
 // --- API Endpoints ---
 
 app.get('/api/chromecast-devices', (req, res) => {
+  console.log(`[API] Solicitud de dispositivos Chromecast recibida. Dispositivos actuales: ${chromecastDevices.length}`);
+  try {
+      // Forzar descubrimiento por si acaso
+      browser.discover(); 
+  } catch (e) {
+      console.error('[API] Error al forzar descubrimiento:', e);
+  }
   res.json(chromecastDevices);
 });
 
